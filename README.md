@@ -126,33 +126,4 @@ fw_time_object = Time()
 
 ## TODO: custom bindings
 
-## TODO: Deployments,
-
-## Development
-
-The autocoder is checked against a fixture model, `tests/fixtures/Ref.fpp`, that exercises every FPP construct the
-generators handle: arrays, enums, structs with a member of every flavour, aliases, abstract types, ports with and
-without return values and with `ref` parameters, interface imports, active/passive/queued components, commands,
-events of every severity, telemetry channels and parameters, and a deployment topology with bound and unbound
-instances.
-
-Two references are generated from it, into `tests/reference` (not checked in):
-
-```sh
-FPRIME=<path to an fprime checkout> tests/regenerate_reference.sh
-```
-
-This needs the fpp JVM tools and the pre-port autocoder in a venv at `.venv-old`, because one reference is the real
-F Prime autocoder's output for the fixture and the other is what `fprime-python` produced before the port.
-
-With those in place:
-
-```sh
-.venv/bin/python tests/compare.py                             # nothing generated has been lost
-FPRIME=<path to an fprime checkout> tests/compile_check.sh     # the generated C++ compiles
-```
-
-`compare.py` checks that every override the generated component declares matches F Prime's own declaration of it
-byte for byte, that no pure virtual is left unimplemented, and that no file, pybind11 name or bound C++ member the
-pre-port autocoder produced has gone missing. `compile_check.sh` compiles the generated C++ against the real
-framework headers, which is what catches a signature that only looks right. 
+## TODO: Deployments

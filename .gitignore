@@ -2,5 +2,4 @@
 __pycache__
 *.egg-info
 /.venv*
-# Regenerate with tests/regenerate_reference.sh; it needs the fpp JVM tools and the pre-port autocoder
-/tests/reference
+/tests

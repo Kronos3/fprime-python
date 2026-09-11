@@ -1,9 +1,0 @@
-/Users/tumbar/git/fprime/Fw/Cmd/Cmd.fpp
-/Users/tumbar/git/fprime/Fw/Log/Log.fpp
-/Users/tumbar/git/fprime/Fw/Time/Time.fpp
-/Users/tumbar/git/fprime/Fw/Tlm/Tlm.fpp
-/Users/tumbar/git/fprime/Fw/Prm/Prm.fpp
-/Users/tumbar/git/fprime/Svc/Sched/Sched.fpp
-/Users/tumbar/git/fprime/Svc/Ping/Ping.fpp
-/Users/tumbar/git/fprime/build-fprime-automatic-native/F-Prime/default/config/FpConfig.fpp
-/Users/tumbar/git/fprime/build-fprime-automatic-native/cmake/platform/unix/Platform/PlatformTypes.fpp

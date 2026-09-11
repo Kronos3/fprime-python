@@ -391,7 +391,9 @@ class ComponentImplementationGenerator(object):
                 )
                 self._write_init(init.body)
                 deinit = cls.function(
-                    "deinit", comment="Release the mirrored Python object"
+                    "deinit",
+                    override=True,
+                    comment="Release the mirrored Python object",
                 )
                 self._write_deinit(deinit.body)
 

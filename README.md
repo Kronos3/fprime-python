@@ -124,6 +124,15 @@ from fprime_python.Fw.Time import Time
 fw_time_object = Time()
 ```
 
+## Development
+
+Install the autocoder and its check dependencies into a virtual environment, then run the type check:
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m mypy
+```
+
 ## TODO: custom bindings
 
 ## TODO: Deployments

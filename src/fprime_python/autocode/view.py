@@ -82,11 +82,13 @@ class PortView:
         # A serial port has no port definition to take a signature from: F Prime hands its handler a
         # Fw::LinearBufferBase, which has nothing to map onto in Python. The handler is pure virtual, so
         # skipping it would leave the generated component abstract -- refuse the component instead.
-        if not isinstance(port.type, fpp.DefPortPortInstanceType):
+        port_type = port.type
+        if not isinstance(port_type, fpp.DefPortPortInstanceType):
             raise UnsupportedModelError(
                 f"port {port.unqualified_name} is a serial port, which fprime-python cannot bind:"
                 f" its handler takes a serialization buffer. Give the port a port type to bind it."
             )
+        self.type = port_type
 
     @property
     def name(self) -> str:
@@ -116,7 +118,7 @@ class PortView:
     @property
     def definition(self) -> fpp.DefPort:
         """ The port definition this instance is an instance of """
-        return self.port.type.value.definition
+        return self.type.definition
 
     @property
     def parameters(self) -> List[FormalParameterView]:
@@ -496,8 +498,9 @@ class TopologyView:
         An instance is bound into Python when the component it instantiates is, so the annotation is
         looked for on the component definition rather than on the instance.
 
-        A topology also instantiates other topologies, which have no component to carry an annotation, so
-        only the component instances are considered.
+        A topology also instantiates other topologies, which have no component to carry an annotation, and
+        an instance may name a port interface rather than a component, in which case there is no component
+        definition either, so only instances that resolve to a component are considered.
 
         Args:
             annotation: The annotation a component must carry for its instances to be bound
@@ -508,5 +511,6 @@ class TopologyView:
             instance
             for instance in self.topology.instance_map
             if isinstance(instance, fpp.ComponentInterfaceInstance)
+            and instance.component is not None
             and is_annotated(instance.component.node, annotation)
         ]

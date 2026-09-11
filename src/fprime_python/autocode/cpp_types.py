@@ -101,6 +101,7 @@ def formal_parameter_type(param: fpp.FormalParam, string_class: StringClass) -> 
         The C++ parameter type, e.g. "U32", "const Ref::PySimple&", "Ref::PyComplex&"
     """
     type_ = param.type_name.resolved_type
+    assert type_ is not None
     name = type_name(type_, string_class)
     if param.kind == fpp.FormalParamKind.Ref:
         return f"{name}&"

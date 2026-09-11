@@ -29,7 +29,7 @@ class IncludeManager(object):
     #: The file-name suffix F Prime's autocoder appends per kind of definition. The suffix does not
     #: follow from the symbol class name -- a struct's header is "SerializableAc.hpp" -- so the kinds
     #: with a generated header are listed, and a symbol of any other kind is an error.
-    symbol_type_to_include_type_name: Dict[Type, str] = {
+    symbol_type_to_include_type_name: Dict[Type[fpp.Symbol], str] = {
         fpp.SymbolAliasType: "Alias",
         fpp.SymbolArrayType: "Array",
         fpp.SymbolComponent: "Component",

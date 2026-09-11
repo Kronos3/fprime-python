@@ -42,7 +42,7 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
         output_path: Path,
         analysis: fpp.Analysis,
         include_manager: IncludeManager,
-    ) -> None:
+    ):
         """ Initialize the visitor
 
         Args:
@@ -77,6 +77,7 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
     def visit_DefArray(self, node: fpp.DefArray) -> None:
         """ Run array generation when an array node is visited """
         symbol = self.symbol_of(node)
+        assert isinstance(node.resolved_type, fpp.ArrayType)
         self.emit(
             ArrayBindingGenerator(self.include_manager, symbol, node.resolved_type).files()
         )
@@ -84,6 +85,7 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
     def visit_DefEnum(self, node: fpp.DefEnum) -> None:
         """ Run enum generation when an enum node is visited """
         symbol = self.symbol_of(node)
+        assert isinstance(node.resolved_type, fpp.EnumType)
         self.emit(
             EnumBindingGenerator(self.include_manager, symbol, node.resolved_type).files()
         )
@@ -91,6 +93,7 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
     def visit_DefStruct(self, node: fpp.DefStruct) -> None:
         """ Run struct generation when a struct node is visited """
         symbol = self.symbol_of(node)
+        assert isinstance(node.resolved_type, fpp.StructType)
         self.emit(
             StructBindingGenerator(self.include_manager, symbol, node.resolved_type).files()
         )

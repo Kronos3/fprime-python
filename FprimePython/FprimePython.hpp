@@ -2,9 +2,9 @@
 #ifndef FPRIME_PYTHON_HPP_
 #define FPRIME_PYTHON_HPP_
 #include <pybind11/pybind11.h>
-#include "Fw/Cmd/CmdString.hpp"
 #include "Fw/Types/String.hpp"
 #include "Fw/Types/StringBase.hpp"
+#include "Fw/Types/StringTemplate.hpp"
 
 // All strings in F Prime behave the same way: they inherit from StringBase, they store a fixed size buffer etc.
 // Thus we can create a generic type caster for all derivatives of StringBase. Since the type_caster is already
@@ -69,8 +69,25 @@ void bind_osal(pybind11::module_& os_module);
 namespace pybind11 {
 namespace detail {
 
-TYPE_CASTER_FW_STRING_BASE_CHILD(Fw::String);
-TYPE_CASTER_FW_STRING_BASE_CHILD(Fw::CmdStringArg);
+template <Fw::StringBase::SizeType size>
+struct type_caster<Fw::StringTemplate<size>> {
+    PYBIND11_TYPE_CASTER(Fw::StringTemplate<size>, io_name("str", "str"));
+
+    static handle cast(const Fw::StringTemplate<size>& string,
+                       return_value_policy /*policy*/,
+                       handle /*parent*/) {
+        return pybind11::str(string.toChar()).release();
+    }
+
+    bool load(handle src, bool convert) {
+        if (pybind11::isinstance<pybind11::str>(src)) {
+            std::string s = src.cast<std::string>();
+            value = s.c_str();
+            return true;
+        }
+        return false;
+    }
+};
 
 // This will bind Fw::StringBase itself into the python layer. Since StringBase cannot be instantiated directly,
 // Fw::String is used as the concrete type for the value member, which provides a backing store for the Python string

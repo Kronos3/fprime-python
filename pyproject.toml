@@ -7,7 +7,7 @@ name = "fprime-python"
 dynamic = ["version"]
 description = "F Prime to Python binding autocoder!"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 keywords = ["fprime", "embedded", "nasa", "flight", "software", "python"]
 authors = [
@@ -20,7 +20,6 @@ classifiers = [
     "Operating System :: POSIX",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -31,7 +30,10 @@ classifiers = [
 ]
 dependencies = [
     "pybind11>=3.0.1",
-    "fprime-python-model>=3.3.0a1",
+    # The FPP model, parsed and analyzed in-process by the native FPP bindings
+    "fprime-fpp-python>=3.3.14",
+    # The C++ document builder the generators emit through
+    "fprime-cpp-codegen>=0.1.0",
 ]
 
 [project.urls]

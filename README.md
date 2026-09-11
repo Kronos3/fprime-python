@@ -38,10 +38,27 @@ and support libraries meaning the user need only mark components as implemented 
 Bindings are generated from the component's model and are built on the [`pybind11`](https://github.com/pybind/pybind11)
 library, which handles the nuances of the Python API.
 
+### How the autocoder reads the model
+
+The autocoder reads the FPP model directly with [`fprime-fpp-python`](https://pypi.org/project/fprime-fpp-python/),
+the native FPP Python bindings, and emits its C++ through
+[`fprime-cpp-codegen`](https://pypi.org/project/fprime-cpp-codegen/), the same builder API F Prime's own C++
+generators are written against. Nothing has to be generated before it runs: the FPP files it analyzes are the
+module's own translation units plus the transitive closure `fpp-depend` already leaves in the module's build cache.
+
+> [!NOTE]
+> Earlier releases went through `fpp-to-json` and `fprime-python-model`, and so needed
+> `FPRIME_ENABLE_JSON_MODEL_GENERATION=ON` in `settings.ini`. That is no longer required, and the JSON model is no
+> longer read.
+
+Things found in those two packages while porting onto them — with what this autocoder does instead — are collected
+in [`docs/upstream-notes.md`](./docs/upstream-notes.md).
+
 ## Installation and Setup
 
-In order to use `fprime-python` download the source code, or add it as a Git submodule.  Once finished, make sure to
-pull int `pybind11` and our autocoding by running `pip install -r requirements.txt` in the `fprime-python` checkout.
+In order to use `fprime-python` download the source code, or add it as a Git submodule.  Once finished, install the
+autocoder and its dependencies by running `pip install .` in the `fprime-python` checkout. This requires Python 3.10
+or newer.
 
 Next, add the path to the download in the `library_locations` list set in settings.ini for a deployment. 
 
@@ -66,6 +83,21 @@ active component ActivePythonExample {
 Once finished, the python bindings will be autocoded and included in the next build (assuming the deployment is setup 
 as shown below). This will also produce a `<component>.template.py` file in the component folder as a basic template for
 implementing components in python.
+
+Every port, command, event, telemetry channel, parameter and internal port of the component is bound. Three
+component features cannot be bound yet, because F Prime declares a handler for each that has no Python equivalent:
+
+| Feature | Why | What happens |
+| --- | --- | --- |
+| serial port | its handler takes a serialization buffer | rejected with an error naming the port |
+| state machine instance | its actions and guards take a state machine id and a signal | rejected with an error naming the component |
+| data product container | its handler takes a `Fw::DpContainer` | rejected with an error naming the component |
+
+In each case the autocoder refuses rather than generating a class that would leave the handler unimplemented and
+fail to link. Drop the `@ fprime-python` annotation to implement such a component in C++ instead.
+
+An annotated topology must be a `deployment topology`: the binding calls the topology's setup and teardown, and
+F Prime only generates those for a deployment.
 
 > [!CAUTION]
 > The `<component>.template.py` is updated on every build unlike F Prime implementation templates.
@@ -94,4 +126,33 @@ fw_time_object = Time()
 
 ## TODO: custom bindings
 
-## TODO: Deployments, 
+## TODO: Deployments,
+
+## Development
+
+The autocoder is checked against a fixture model, `tests/fixtures/Ref.fpp`, that exercises every FPP construct the
+generators handle: arrays, enums, structs with a member of every flavour, aliases, abstract types, ports with and
+without return values and with `ref` parameters, interface imports, active/passive/queued components, commands,
+events of every severity, telemetry channels and parameters, and a deployment topology with bound and unbound
+instances.
+
+Two references are generated from it, into `tests/reference` (not checked in):
+
+```sh
+FPRIME=<path to an fprime checkout> tests/regenerate_reference.sh
+```
+
+This needs the fpp JVM tools and the pre-port autocoder in a venv at `.venv-old`, because one reference is the real
+F Prime autocoder's output for the fixture and the other is what `fprime-python` produced before the port.
+
+With those in place:
+
+```sh
+.venv/bin/python tests/compare.py                             # nothing generated has been lost
+FPRIME=<path to an fprime checkout> tests/compile_check.sh     # the generated C++ compiles
+```
+
+`compare.py` checks that every override the generated component declares matches F Prime's own declaration of it
+byte for byte, that no pure virtual is left unimplemented, and that no file, pybind11 name or bound C++ member the
+pre-port autocoder produced has gone missing. `compile_check.sh` compiles the generated C++ against the real
+framework headers, which is what catches a signature that only looks right. 

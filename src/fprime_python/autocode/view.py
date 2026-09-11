@@ -2,11 +2,11 @@
 
 Ordered, generation-facing views over the analyzed FPP model.
 
-fpp exposes a component's ports, commands, events, channels and parameters as maps whose iteration order
-is deterministic but arbitrary. Generated code has to be stable across runs, so everything reached
-through these views is sorted the way F Prime's own autocoder sorts it: ports by name, and the id-keyed
-maps by id. The views also own the derived C++ and Python names -- handler names,
-`log_<SEVERITY>_<EVENT>`, `tlmWrite_<CHANNEL>` and so on -- so that every generator agrees on them.
+fpp iterates a component's ports, commands, events, channels and parameters in key order -- ports by
+name, and the id-keyed maps by id -- which is the order F Prime's own autocoder emits them in, so these
+views walk the maps as they come. What the views add is the derived C++ and Python names -- handler
+names, `log_<SEVERITY>_<EVENT>`, `tlmWrite_<CHANNEL>` and so on -- so that every generator agrees on
+them, and the checks that reject a model this autocoder cannot bind.
 """
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ class PortView:
         # A serial port has no port definition to take a signature from: F Prime hands its handler a
         # Fw::LinearBufferBase, which has nothing to map onto in Python. The handler is pure virtual, so
         # skipping it would leave the generated component abstract -- refuse the component instead.
-        if not isinstance(port.type, fpp.PortInstanceTypeDefPort):
+        if not isinstance(port.type, fpp.DefPortPortInstanceType):
             raise UnsupportedModelError(
                 f"port {port.unqualified_name} is a serial port, which fprime-python cannot bind:"
                 f" its handler takes a serialization buffer. Give the port a port type to bind it."
@@ -177,7 +177,7 @@ class InternalPortView:
 class CommandView:
     """ One command of a component """
 
-    def __init__(self, command: fpp.NonParam) -> None:
+    def __init__(self, command: fpp.NonParamCommand) -> None:
         """ Wrap a command """
         self.command = command
 
@@ -368,7 +368,7 @@ class ComponentView:
         Args:
             inputs: True to select input ports, False to select output ports
         Returns:
-            The matching ports, sorted by name
+            The matching ports, in name order
         Raises:
             UnsupportedModelError: The component has a port this autocoder cannot bind
         """
@@ -377,34 +377,31 @@ class ComponentView:
             if not isinstance(port, fpp.GeneralPortInstance):
                 continue
             try:
-                ports.append(PortView(port))
+                view = PortView(port)
             except UnsupportedModelError as error:
                 raise UnsupportedModelError(f"Component {self.fpp_name}: {error}") from None
-        return sorted(
-            (port for port in ports if port.is_input == inputs), key=lambda port: port.name
-        )
+            if view.is_input == inputs:
+                ports.append(view)
+        return ports
 
     @property
     def input_ports(self) -> List[PortView]:
-        """ The component's general input ports, sorted by name """
+        """ The component's general input ports, in name order """
         return self._general_ports(inputs=True)
 
     @property
     def output_ports(self) -> List[PortView]:
-        """ The component's general output ports, sorted by name """
+        """ The component's general output ports, in name order """
         return self._general_ports(inputs=False)
 
     @property
     def internal_ports(self) -> List[InternalPortView]:
-        """ The component's internal ports, sorted by name """
-        return sorted(
-            (
-                InternalPortView(port)
-                for port in self.component.port_map.values()
-                if isinstance(port, fpp.InternalPortInstance)
-            ),
-            key=lambda port: port.name,
-        )
+        """ The component's internal ports, in name order """
+        return [
+            InternalPortView(port)
+            for port in self.component.port_map.values()
+            if isinstance(port, fpp.InternalPortInstance)
+        ]
 
     @property
     def commands(self) -> List[CommandView]:
@@ -416,26 +413,24 @@ class ComponentView:
         """
         return [
             CommandView(command)
-            for _, command in sorted(self.component.command_map.items())
-            if isinstance(command, fpp.NonParam)
+            for command in self.component.command_map.values()
+            if isinstance(command, fpp.NonParamCommand)
         ]
 
     @property
     def events(self) -> List[EventView]:
         """ The component's events, in id order """
-        return [EventView(event) for _, event in sorted(self.component.event_map.items())]
+        return [EventView(event) for event in self.component.event_map.values()]
 
     @property
     def channels(self) -> List[ChannelView]:
         """ The component's telemetry channels, in id order """
-        return [
-            ChannelView(channel) for _, channel in sorted(self.component.tlm_channel_map.items())
-        ]
+        return [ChannelView(channel) for channel in self.component.tlm_channel_map.values()]
 
     @property
     def parameters(self) -> List[ParameterView]:
         """ The component's parameters, in id order """
-        return [ParameterView(param) for _, param in sorted(self.component.param_map.items())]
+        return [ParameterView(param) for param in self.component.param_map.values()]
 
 
 class TopologyView:
@@ -447,12 +442,8 @@ class TopologyView:
 
     @property
     def node(self) -> fpp.DefTopology:
-        """ The topology's definition node
-
-        Unlike the other analysis objects a topology has no `node` of its own, so the definition is
-        reached through its symbol.
-        """
-        return self.topology.symbol.definition
+        """ The topology's definition node """
+        return self.topology.node
 
     @property
     def name(self) -> str:
@@ -499,21 +490,23 @@ class TopologyView:
                 f" `deployment topology {self.name}` to bind it."
             )
 
-    def bound_instances(self, annotation: str) -> List[fpp.InterfaceInstanceComponent]:
+    def bound_instances(self, annotation: str) -> List[fpp.ComponentInterfaceInstance]:
         """ The topology's component instances whose component carries the given annotation
 
         An instance is bound into Python when the component it instantiates is, so the annotation is
         looked for on the component definition rather than on the instance.
 
+        A topology also instantiates other topologies, which have no component to carry an annotation, so
+        only the component instances are considered.
+
         Args:
             annotation: The annotation a component must carry for its instances to be bound
         Returns:
-            The matching component instances, in declaration order
+            The matching component instances, in name order
         """
-        instances = []
-        for instance in self.topology.instance_map:
-            component = getattr(instance, "component", None)
-            if component is None or not is_annotated(component.node, annotation):
-                continue
-            instances.append(instance)
-        return instances
+        return [
+            instance
+            for instance in self.topology.instance_map
+            if isinstance(instance, fpp.ComponentInterfaceInstance)
+            and is_annotated(instance.component.node, annotation)
+        ]

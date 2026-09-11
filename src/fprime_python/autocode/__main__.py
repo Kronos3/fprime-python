@@ -207,9 +207,9 @@ def generate_bindings(args: argparse.Namespace) -> Dict[Path, str]:
 	model = load_model(sources, imports)
 	include_manager = IncludeManager(args.prefixes)
 	visitor = AnnotatedDefinitionVisitor(
-		args.output_directory, sources, model.analysis, include_manager
+		args.output_directory, model.analysis, include_manager
 	)
-	return visitor.visit_model(model.ast)
+	return visitor.generate(model)
 
 
 def main(argv: List[str] | None = None) -> int:

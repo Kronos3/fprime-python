@@ -26,17 +26,17 @@ class IncludeManager(object):
     F Prime mirrors into the build cache. Include paths are relative to the closest enclosing prefix.
     """
 
-    #: The file-name suffix F Prime's autocoder appends per kind of definition. The symbol classes are
-    #: inconsistently named in fpp -- some carry a "Symbol" prefix and some do not -- so they are listed
-    #: rather than derived.
+    #: The file-name suffix F Prime's autocoder appends per kind of definition. The suffix does not
+    #: follow from the symbol class name -- a struct's header is "SerializableAc.hpp" -- so the kinds
+    #: with a generated header are listed, and a symbol of any other kind is an error.
     symbol_type_to_include_type_name: Dict[Type, str] = {
         fpp.SymbolAliasType: "Alias",
-        fpp.Array: "Array",
+        fpp.SymbolArrayType: "Array",
         fpp.SymbolComponent: "Component",
-        fpp.Constant: "Constant",
-        fpp.SymbolEnum: "Enum",
-        fpp.Port: "Port",
-        fpp.Struct: "Serializable",
+        fpp.SymbolConstant: "Constant",
+        fpp.SymbolEnumType: "Enum",
+        fpp.SymbolPort: "Port",
+        fpp.SymbolStructType: "Serializable",
         fpp.SymbolTopology: "Topology",
     }
 

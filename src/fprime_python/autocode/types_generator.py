@@ -72,7 +72,7 @@ class ArrayBindingGenerator(BindingGenerator):
         F Prime makes such an array's `ElementType` a `Fw::ExternalString`, a view onto storage inside the
         array. It cannot be copied, so the element crosses into Python as a `std::string` instead.
         """
-        return isinstance(self.array_type.anon_array.elt_type.underlying_type, fpp.TypeString)
+        return isinstance(self.array_type.anon_array.elt_type.underlying_type, fpp.StringType)
 
     def bind(self, body: Body) -> None:
         """ Write the pybind11 statements binding this array """
@@ -236,9 +236,9 @@ class StructBindingGenerator(BindingGenerator):
     def bound_members(self) -> List[str]:
         """ The names of the struct's bindable members, in declaration order
 
-        The semantic type's member map does not preserve declaration order, so the order comes from the
-        definition node. Members that are inline arrays are dropped: the struct's `sizes` map holds an
-        entry for each of them.
+        The semantic type's member map is keyed by member name and so iterates in name order rather than
+        declaration order, so the order comes from the definition node. Members that are inline arrays
+        are dropped: the struct's `sizes` map holds an entry for each of them.
         """
         return [
             member.name

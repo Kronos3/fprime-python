@@ -9,7 +9,7 @@ the components and topologies annotated with @fprime-python.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict
 
 import fpp
 
@@ -40,7 +40,6 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
     def __init__(
         self,
         output_path: Path,
-        accepted_translation_units: Iterable[Path],
         analysis: fpp.Analysis,
         include_manager: IncludeManager,
     ) -> None:
@@ -48,15 +47,10 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
 
         Args:
             output_path: Directory the generated files are written into
-            accepted_translation_units: The translation units to generate for; definitions from any other
-                file are skipped so that a definition is not generated twice by two modules
             analysis: The analyzed model being visited
             include_manager: Resolves the include paths of the headers the generated code needs
         """
         self.output_path = output_path
-        self.accepted_translation_units = {
-            path.resolve() for path in accepted_translation_units
-        }
         self.analysis = analysis
         self.include_manager = include_manager
         self.output: Dict[Path, str] = {}
@@ -141,26 +135,21 @@ class AnnotatedDefinitionVisitor(fpp.NodeVisitor):
         TopologyView(topology).check_supported()
         self.emit(TopologyBindingGenerator(self.include_manager, symbol, topology).files())
 
-    def visit_model(self, translation_units: List[fpp.TransUnit]) -> Dict[Path, str]:
-        """ Visit a model's translation units and generate for the accepted ones
+    def generate(self, model: fpp.Model) -> Dict[Path, str]:
+        """ Visit the model's source translation units and generate for their definitions
 
-        Translation units are filtered down to the accepted ones because visiting units outside the scope
-        of the current module risks generating the same definition in several modules. The filter is
-        applied to each unit's top-level members rather than to the unit itself, so that definitions
-        included into an accepted unit from a fragment file are still generated.
+        The import units are skipped: they are present only to resolve references out of the sources, and
+        visiting them would generate the same definition in every module that depends on it. Membership is
+        the unit's rather than the file's, so a definition spliced into a source unit by `include` is
+        still generated.
 
         Args:
-            translation_units: Every translation unit of the model
+            model: The analyzed model to generate from
         Returns:
             A mapping of output path to file contents
         """
         self.output = {}
-        for translation_unit in translation_units:
-            for member in translation_unit.members:
-                location = member.location
-                if location is None:
-                    continue
-                if Path(location.uri).resolve() not in self.accepted_translation_units:
-                    continue
-                self.visit(member)
+        for translation_unit in model.ast:
+            if translation_unit.is_source:
+                self.visit(translation_unit)
         return self.output

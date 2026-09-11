@@ -50,19 +50,20 @@ def read_path_list(path: Path) -> List[Path]:
     return [Path(entry.strip()) for entry in entries if entry.strip()]
 
 
-def deduplicate(paths: Iterable[Path]) -> List[Path]:
+def deduplicate(paths: Iterable[Path], *, exclude: Iterable[Path] = ()) -> List[Path]:
     """ Drop repeated paths, keeping the first occurrence
 
-    A translation unit may appear both in the module's own sources and in another module's dependency
-    closure. Passing it to `fpp.analyze` twice would analyze it as two translation units and report
-    every definition in it as a duplicate, so the list is reduced first.
+    A translation unit may appear twice in one list, or appear both in the module's own sources and in
+    another module's dependency closure. Passing it to `fpp.analyze` twice would analyze it as two
+    translation units and report every definition in it as a duplicate, so the lists are reduced first.
 
     Args:
         paths: Paths to deduplicate
+        exclude: Paths to drop entirely, whether or not they are repeated
     Returns:
-        The paths with repeats removed, in first-seen order
+        The paths with repeats and exclusions removed, in first-seen order
     """
-    seen = set()
+    seen = {path.resolve() for path in exclude}
     unique = []
     for path in paths:
         resolved = path.resolve()
@@ -73,32 +74,13 @@ def deduplicate(paths: Iterable[Path]) -> List[Path]:
     return unique
 
 
-def format_diagnostic(diagnostic: fpp.Diagnostic) -> str:
-    """ Render one of fpp's diagnostics the way a compiler would
-
-    fpp reports 0-indexed lines and columns, which are converted here to the 1-indexed ones an editor
-    expects.
-
-    Args:
-        diagnostic: The diagnostic to render
-    Returns:
-        The diagnostic as a single line of text
-    """
-    location = diagnostic.location
-    if location is None:
-        return f"{diagnostic.level}: {diagnostic.message}"
-    return (
-        f"{location.uri}:{location.line + 1}:{location.column + 1}:"
-        f" {diagnostic.level}: {diagnostic.message}"
-    )
-
-
 def load_model(sources: Iterable[Path], imports: Iterable[Path]) -> fpp.Model:
     """ Parse and analyze the FPP model made up of the given sources and imports
 
-    `fpp.analyze` takes one flat list of translation units and analyzes them together. Sources and
-    imports are only distinguished by the caller, which generates code for the sources alone; see
-    `visitor.AnnotatedDefinitionVisitor`.
+    The two are kept apart the way `fpp-to-cpp` keeps them apart: the sources are the translation units
+    this module generates for, and the imports are present only to resolve references out of them. fpp
+    records the split on the model, so a definition reached during generation answers whether it came
+    from a source; see `visitor.AnnotatedDefinitionVisitor`.
 
     Args:
         sources: The module's own translation units
@@ -108,14 +90,19 @@ def load_model(sources: Iterable[Path], imports: Iterable[Path]) -> fpp.Model:
     Raises:
         ModelError: A listed file is missing, or the model does not analyze cleanly
     """
-    paths = deduplicate(list(imports) + list(sources))
-    missing = [path for path in paths if not path.is_file()]
+    source_paths = deduplicate(sources)
+    # A unit that is both a source and an import is a source: it is one of the units generated for, and
+    # analyzing it twice would report every definition in it as a duplicate
+    import_paths = deduplicate(imports, exclude=source_paths)
+    missing = [path for path in source_paths + import_paths if not path.is_file()]
     if missing:
         raise ModelError(
             "FPP files listed in the model do not exist:\n"
             + "\n".join(f"  {path}" for path in missing)
         )
-    model = fpp.analyze([str(path) for path in paths])
+    model = fpp.analyze(
+        [str(path) for path in source_paths], imports=[str(path) for path in import_paths]
+    )
     if model.has_errors:
         errors = [
             diagnostic for diagnostic in model.diagnostics if diagnostic.level == "error"
@@ -124,6 +111,6 @@ def load_model(sources: Iterable[Path], imports: Iterable[Path]) -> fpp.Model:
         reported = errors or model.diagnostics
         raise ModelError(
             f"FPP model has {model.error_count} error(s):\n"
-            + "\n".join(f"  {format_diagnostic(diagnostic)}" for diagnostic in reported)
+            + "\n".join(f"  {diagnostic.display}" for diagnostic in reported)
         )
     return model

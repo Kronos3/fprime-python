@@ -23,7 +23,7 @@ from typing import Optional, Tuple
 
 import fpp
 
-from .names import cpp_name, enum_member
+from .names import cpp_name
 
 
 class StringClass(enum.Enum):
@@ -60,18 +60,18 @@ def type_name(type_: fpp.Type, string_class: StringClass) -> str:
     """
     # A modeled string has no C++ type of its own. An alias of one is spelled the same way, because such an
     # alias names a size rather than a type -- F Prime generates no header for it.
-    if isinstance(type_.underlying_type, fpp.TypeString):
+    if isinstance(type_.underlying_type, fpp.StringType):
         return string_class.value
     # Arrays, enums, structs, aliases and abstract types are all named by their defining symbol. Using the
     # symbol keeps an alias spelled as the alias rather than as the type it aliases.
     symbol = type_.def_symbol
     if symbol is not None:
         return cpp_name(symbol.qualified_name)
-    if isinstance(type_, fpp.TypeBoolean):
+    if isinstance(type_, fpp.BooleanType):
         return "bool"
     # Integers and floats name themselves through their kind, e.g. IntegerKind.U32 -> "U32"
-    if isinstance(type_, (fpp.PrimitiveInt, fpp.Float)):
-        return enum_member(type_.value)
+    if isinstance(type_, (fpp.PrimitiveIntType, fpp.FloatType)):
+        return type_.value.name
     raise UnsupportedTypeError(
         f"FPP type {type_!r} is anonymous and has no C++ name; name it in the model to bind it"
     )

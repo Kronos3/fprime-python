@@ -30,9 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "pybind11>=3.0.1",
-    # The FPP model, parsed and analyzed in-process by the native FPP bindings
-    "fprime-fpp-python>=3.3.14",
-    # The C++ document builder the generators emit through
+    "fprime-fpp-python>=3.3.15",
     "fprime-cpp-codegen>=0.1.0",
 ]
 

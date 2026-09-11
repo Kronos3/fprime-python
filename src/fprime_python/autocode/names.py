@@ -7,7 +7,7 @@ submodule variables flatten either separator to "_" because they live at global 
 """
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 
 
 def cpp_name(qualified_name: str) -> str:
@@ -57,17 +57,3 @@ def namespaces_of(qualified_name: str) -> List[str]:
     """
     scope = scope_of(qualified_name)
     return scope.split(".") if scope else []
-
-
-def enum_member(value: Any) -> str:
-    """ Recover the member name of one of fpp's enumeration values
-
-    fpp's enumerations are pybind-style native classes rather than Python enums: they expose neither
-    `name` nor `value`, and only their repr ("IntegerKind.U32") carries the member name.
-
-    Args:
-        value: One of fpp's enumeration values, e.g. fpp.IntegerKind.U32
-    Returns:
-        The member name, e.g. "U32"
-    """
-    return str(value).rpartition(".")[2]

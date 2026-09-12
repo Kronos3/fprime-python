@@ -13,18 +13,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 import fpp
-from fprime_cpp_codegen import (
-    Body,
-    Class,
-    ClassBuilder,
-    Context,
-    CppDocBuilder,
-    CppWriter,
-    HppWriter,
-    Line,
-    Output,
-    render,
-)
+from fprime_cpp_codegen import Body, ClassBuilder, CppDocBuilder, Output
 
 from .binding_generator import BindingGenerator, expression_chain, standard_def
 from .constants import SELF_MEMBER, SUPPORT_HEADER, TOOL_NAME
@@ -116,32 +105,9 @@ class ComponentBindingGenerator(BindingGenerator):
         ]
 
 
-class ExportedClassHppWriter(HppWriter):
-    """ A header writer that gives every class default symbol visibility
-
-    The generated component class has to be visible outside the shared object pybind11 loads, and
-    fprime-cpp-codegen has no hook for a declaration attribute. Putting the attribute in the class name
-    would corrupt the constructor, destructor and out-of-line definition spellings, so the class head is
-    rewritten here instead, leaving everything else to the base writer.
-    """
-
-    #: Attribute that exports a class from the shared object it is compiled into
-    VISIBILITY_ATTRIBUTE = '__attribute__((visibility("default")))'
-
-    def visit_class(self, ctx: Context, c: Class) -> List[Line]:
-        """ Render a class declaration, with the visibility attribute on its head """
-        rendered = super().visit_class(ctx, c)
-        keyword = "struct" if c.struct else "class"
-        head = f"{keyword} {c.name}"
-        for index, current in enumerate(rendered):
-            if current.string.startswith(head):
-                remainder = current.string[len(keyword):].lstrip()
-                rendered[index] = Line(
-                    f"{keyword} {self.VISIBILITY_ATTRIBUTE} {remainder}", current.indent
-                )
-                break
-        return rendered
-
+#: Attribute that exports the component class from the shared object it is compiled into, so that
+#: pybind11 can see its symbols in the object it loads
+VISIBILITY_ATTRIBUTE = '__attribute__((visibility("default")))'
 
 #: Docstring of the generated Python base class
 PYTHON_BASE_CLASS_DOCSTRING = '''""" Auto-coded base class for {name}
@@ -349,6 +315,9 @@ class ComponentImplementationGenerator(object):
             constructor = cls.constructor(
                 params=[("const char*", "name", "The component name")],
                 comment=f"Construct {self.name} object",
+                # Nothing is constructed beyond what the base class does, and the document is strict, so
+                # the empty body has to be declared rather than merely left unwritten
+                body="",
             )
             constructor.init(f"{component.base_class}(name)")
             # The mirror object is owned by exactly one C++ object, so copying is not meaningful
@@ -403,11 +372,13 @@ class ComponentImplementationGenerator(object):
         ]
         if using_statements:
             with cls.public("Base class members exposed to Python"):
+                # The method names come from the model, so this is not margin-stripped
                 cls.lines(
                     "\n".join(
-                        f"|using {component.base_class}::{method};"
+                        f"using {component.base_class}::{method};"
                         for method in using_statements
-                    )
+                    ),
+                    margin=None,
                 )
 
         with cls.public("Member variables"):
@@ -429,6 +400,9 @@ class ComponentImplementationGenerator(object):
             description=f"{self.name} Python component implementation",
             include_guard=f"FPRIME_PYTHON_{self.name.upper()}_AC_HPP",
             tool_name=TOOL_NAME,
+            # Every handler this generator declares has to forward into Python; one left unfilled would
+            # otherwise render as an empty override that silently swallows the call
+            strict=True,
         )
         doc.include(
             self.include_manager.get_include_path(self.symbol),
@@ -447,6 +421,7 @@ class ComponentImplementationGenerator(object):
             self.name,
             extends=f"public {component.base_class}",
             comment=f"Python implementation of the {component.fpp_name} component",
+            attributes=VISIBILITY_ATTRIBUTE,
         ) as cls:
             self._write_lifecycle(cls)
             self._write_handlers(cls)
@@ -530,10 +505,8 @@ class ComponentImplementationGenerator(object):
         Returns:
             A mapping of file name to file contents
         """
-        built = self.document().build()
         return {
-            f"{self.name}.hpp": render(ExportedClassHppWriter().visit_doc(built)),
-            f"{self.name}.cpp": render(CppWriter().visit_doc(built)),
+            **self.document().files(),
             f"{self.name}BaseAc.py": self.python_base_class(),
             f"{self.name}.template.py": self.python_implementation(),
         }

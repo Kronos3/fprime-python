@@ -14,7 +14,7 @@ from typing import Iterable, List
 import fpp
 from fprime_cpp_codegen import Body, CppDocBuilder, Output
 
-from .binding_generator import BindingGenerator, expression_chain, verbatim
+from .binding_generator import BindingGenerator, expression_chain
 from .constants import FPRIME_PYTHON_ANNOTATION, SELF_MEMBER
 from .include import IncludeManager
 from .names import cpp_name
@@ -115,8 +115,8 @@ class TopologyBindingGenerator(BindingGenerator):
             docstring = TOPOLOGY_FUNCTION_DOCSTRING.format(
                 action=action, fqn=self.topology.cpp_name
             )
-            verbatim(
-                body,
+            # The docstring is model-derived, so this is not margin-stripped
+            body.lines(
                 TOPOLOGY_FUNCTION_TEMPLATE.format(
                     action=action,
                     namespace=self.topology.cpp_namespace,
@@ -124,6 +124,7 @@ class TopologyBindingGenerator(BindingGenerator):
                         f"    {literal}" for literal in cpp_string_literal(docstring)
                     ),
                 ),
+                margin=None,
             )
         body.blank()
         body.comment(
@@ -153,6 +154,7 @@ class TopologyBindingGenerator(BindingGenerator):
         no members of its own and is declared in the source rather than the header so that two topologies
         in one namespace do not declare it twice in the same translation unit.
         """
+        # The namespace names come from the model, so this is not margin-stripped
         doc.lines(
             "\n".join(
                 ["", "// Empty struct the instance bindings hang off"]
@@ -160,6 +162,7 @@ class TopologyBindingGenerator(BindingGenerator):
                     self.topology.namespaces, [f"struct {INSTANCES_STRUCT} {{}};"]
                 )
             ),
+            margin=None,
             output=Output.CPP,
         )
 

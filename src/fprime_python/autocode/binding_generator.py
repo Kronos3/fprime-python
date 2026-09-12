@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Iterable, List
 
 import fpp
-from fprime_cpp_codegen import Body, CppDocBuilder, Line, Output, line
+from fprime_cpp_codegen import Body, CppDocBuilder, Line, Output, line, lines
 from fprime_cpp_codegen.lines import add_suffix, indent_lines
 
 from .constants import MODULE_VARIABLE_PREFIX, SUPPORT_HEADER, TOOL_NAME
@@ -37,20 +37,6 @@ One language to rule them all, one language to find them...
 
 #: Comment placed above every generated initialization function's definition
 INIT_FUNCTION_DEFINITION_COMMENT = "\n// ...and in the darkness bind them ({fqn})"
-
-
-def verbatim(body: Body, text: str) -> None:
-    """ Write text into a function body exactly as given
-
-    `Body.lines` strips a leading "|" margin marker from every line, which would corrupt C++ containing
-    one. `Body.line` does not, so text that is not written by hand right here goes through this instead.
-
-    Args:
-        body: The function body to write into
-        text: The text to write, which may span lines
-    """
-    for text_line in text.split("\n"):
-        body.line(text_line)
 
 
 def expression_chain(head: str, links: Iterable[str]) -> List[Line]:
@@ -187,18 +173,21 @@ class BindingGenerator(ABC):
             description=f"{self.name} Python bindings",
             include_guard=self.include_guard,
             tool_name=TOOL_NAME,
+            strict=True,
         )
         doc.include(*self.hpp_includes())
         doc.include(*self.cpp_includes(), output=Output.CPP)
         doc.system_include(*self.cpp_system_includes(), output=Output.CPP)
         self.cpp_preamble(doc)
         doc.lines(
-            INIT_FUNCTION_DEFINITION_COMMENT.format(fqn=self.cpp_fqn), output=Output.CPP
+            INIT_FUNCTION_DEFINITION_COMMENT.format(fqn=self.cpp_fqn),
+            margin=None,
+            output=Output.CPP,
         )
         function = doc.function(
             self.init_function_name,
             params=[("pybind11::module_&", "m")],
-            comment=INIT_FUNCTION_COMMENT.format(fqn=self.cpp_fqn),
+            comment=lines(INIT_FUNCTION_COMMENT.format(fqn=self.cpp_fqn), margin=None),
         )
         self.bind(function.body)
         return doc
@@ -220,9 +209,7 @@ class BindingGenerator(ABC):
         Returns:
             A mapping of file name to file contents
         """
-        doc = self.document()
         return {
-            f"{self.file_base}.hpp": doc.render_hpp(),
-            f"{self.file_base}.cpp": doc.render_cpp(),
+            **self.document().files(),
             f"{self.name}{self.INVOCATION_SUFFIX}.json": json.dumps(self.invocation()),
         }

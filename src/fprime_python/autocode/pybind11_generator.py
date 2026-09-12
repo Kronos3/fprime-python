@@ -87,10 +87,13 @@ def render_module_file(files: List[Path], headers: List[Path]) -> str:
     """
     invocations = read_and_merge(files)
 
+    # The module is loaded by the interpreter rather than called from other C++, so there is no
+    # declaration to make and the document is source-only
     doc = CppDocBuilder(
         INIT_FILE_BASE,
         description=f"the {MODULE_NAME} Python module",
         tool_name=TOOL_NAME,
+        emit_hpp=False,
     )
     doc.include(*[str(header) for header in headers], SUPPORT_HEADER, output=Output.CPP)
 
@@ -122,6 +125,4 @@ def render_module_file(files: List[Path], headers: List[Path]) -> str:
         ),
         output=Output.CPP,
     )
-    # The document's header would hold nothing: there is no declaration to make, because the module is
-    # loaded by the interpreter rather than called from other C++.
     return doc.render_cpp()

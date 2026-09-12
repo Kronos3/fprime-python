@@ -10,7 +10,7 @@ from typing import List, Tuple
 import fpp
 from fprime_cpp_codegen import Body
 
-from .binding_generator import BindingGenerator, expression_chain, verbatim
+from .binding_generator import BindingGenerator, expression_chain
 from .cpp_types import struct_member_getter
 from .include import IncludeManager
 
@@ -159,10 +159,11 @@ class EnumBindingGenerator(BindingGenerator):
     def bind(self, body: Body) -> None:
         """ Write the pybind11 statements binding this enumeration """
         fqn = self.cpp_fqn
-        verbatim(
-            body,
+        # The C++ name comes from the model, so this is not margin-stripped
+        body.lines(
             f'pybind11::class_<{fqn}> enumeration(m, "{self.name}");\n'
             f'enumeration.def_readwrite("e", &{fqn}::e);',
+            margin=None,
         )
         body.blank()
         # `native_enum` has to be finalized before anything else touches the enclosing scope, so the
@@ -178,7 +179,7 @@ class EnumBindingGenerator(BindingGenerator):
         body.blank()
         # Constructing the wrapper from one of its own values is the natural Python spelling, and can
         # only be bound once T exists.
-        verbatim(body, f"enumeration.def(pybind11::init<{fqn}::T>());")
+        body.lines(f"enumeration.def(pybind11::init<{fqn}::T>());", margin=None)
 
     def cpp_system_includes(self) -> List[str]:
         """ Get any system includes required by this type generator """

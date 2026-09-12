@@ -27,13 +27,10 @@ from fprime_cpp_codegen import (
 )
 
 from .binding_generator import BindingGenerator, expression_chain, standard_def
-from .constants import SUPPORT_HEADER, TOOL_NAME
+from .constants import SELF_MEMBER, SUPPORT_HEADER, TOOL_NAME
 from .include import IncludeManager
-from .view import ComponentView, ParameterView
+from .view import CommandView, ComponentView, HandlerView, ParameterView
 
-
-#: Member of the generated class that holds the mirrored Python object
-SELF_MEMBER = "m_self"
 
 #: Telemetry write bindings keep the default timestamp argument F Prime declares, so that Python callers
 #: may leave it out and have the component request the time itself
@@ -233,8 +230,8 @@ class {name}({name}Base):
 
 #: Stub for one port handler in the Python implementation template
 PYTHON_PORT_HANDLER_TEMPLATE = '''    def {handler}(self{args}):
-        """ Handle the {name} port """
-        # TODO: Implement port handler{return_note}
+        """ Handle the {name} {kind} """
+        # TODO: Implement {kind} handler{return_note}
         pass
 '''
 
@@ -314,31 +311,111 @@ class ComponentImplementationGenerator(object):
     def _write_deinit(self, body: Body) -> None:
         """ Write the body of the generated deinit function
 
-        Dropping the reference to the mirror object lets the interpreter shut down cleanly.
+        Dropping the reference to the mirror object lets the interpreter shut down cleanly. The base class
+        is then given its own teardown -- a queued or active component returns its message queue there --
+        so that `deinit` undoes what `init` did rather than only the Python half of it.
         """
         body.comment("Acquire the GIL and dereference the Python object")
         with body.block():
             body.line("pybind11::gil_scoped_acquire acquired{};")
             body.line(f"this->{SELF_MEMBER} = pybind11::none();")
+        body.comment("Continue the standard teardown of F Prime")
+        body.line(f"{self.component.base_class}::deinit();")
 
-    def _write_forwarding_call(
-        self, body: Body, method: str, arguments: List[str], return_type: str
-    ) -> None:
-        """ Write a body that forwards a call into the mirrored Python object
+    def _write_forwarding_call(self, body: Body, handler: HandlerView) -> None:
+        """ Write a handler body that forwards the call into the mirrored Python object
 
         Args:
             body: The function body to write into
-            method: The name of the Python method to call
-            arguments: The C++ names of the arguments to pass along
-            return_type: The C++ type to cast the result back to, or "void" to discard it
+            handler: The component member whose handler is being written
         """
         body.line("pybind11::gil_scoped_acquire acquired{};")
-        call = f'{SELF_MEMBER}.attr("{method}")({", ".join(arguments)})'
-        if return_type == "void":
+        arguments = ", ".join(handler.handler_arguments)
+        call = f'{SELF_MEMBER}.attr("{handler.handler_name}")({arguments})'
+        if handler.handler_return_type == "void":
             body.line(f"{call};")
             return
         body.line(f"pybind11::object return_value = {call};")
-        body.line(f"return return_value.cast<{return_type}>();")
+        body.line(f"return return_value.cast<{handler.handler_return_type}>();")
+
+    def _write_lifecycle(self, cls: ClassBuilder) -> None:
+        """ Declare and define the component's construction, initialization and destruction
+
+        Args:
+            cls: The class builder to add the members to
+        """
+        component = self.component
+        with cls.public("Construction, initialization, and destruction"):
+            constructor = cls.constructor(
+                params=[("const char*", "name", "The component name")],
+                comment=f"Construct {self.name} object",
+            )
+            constructor.init(f"{component.base_class}(name)")
+            # The mirror object is owned by exactly one C++ object, so copying is not meaningful
+            cls.constructor(
+                params=[(f"const {self.name}&", "other")],
+                deleted=True,
+                comment=f"Copy construction of {self.name} is not supported",
+            )
+            cls.destructor(defaulted=True, comment=f"Destroy {self.name} object")
+            init = cls.function(
+                "init",
+                params=self._init_params(),
+                comment=f"Initialize {self.name} object and its mirrored Python object",
+            )
+            self._write_init(init.body)
+            deinit = cls.function(
+                "deinit",
+                override=True,
+                comment="Release the mirrored Python object",
+            )
+            self._write_deinit(deinit.body)
+
+    def _write_handlers(self, cls: ClassBuilder) -> None:
+        """ Declare and define one forwarding override per handler F Prime declares
+
+        Args:
+            cls: The class builder to add the handlers to
+        """
+        with cls.public("Handlers forwarded to Python"):
+            for handler in self.component.handlers:
+                override = cls.function(
+                    handler.handler_name,
+                    ret=handler.handler_return_type,
+                    params=handler.handler_parameters,
+                    override=True,
+                    comment=f"Handler for {handler.HANDLER_KIND} {handler.name}",
+                )
+                self._write_forwarding_call(override.body, handler)
+
+    def _write_exposed_members(self, cls: ClassBuilder) -> None:
+        """ Re-expose the base class members Python needs, and declare the mirror object
+
+        F Prime declares the methods a Python implementation calls on itself `protected`, so they are
+        pulled into public scope for the bindings to take their addresses.
+
+        Args:
+            cls: The class builder to add the members to
+        """
+        component = self.component
+        using_statements = base_class_methods(component) + [
+            channel.write_name for channel in component.channels
+        ]
+        if using_statements:
+            with cls.public("Base class members exposed to Python"):
+                cls.lines(
+                    "\n".join(
+                        f"|using {component.base_class}::{method};"
+                        for method in using_statements
+                    )
+                )
+
+        with cls.public("Member variables"):
+            cls.var(
+                "pybind11::object",
+                SELF_MEMBER,
+                comment="The mirrored Python object this component forwards into",
+            )
 
     def document(self) -> CppDocBuilder:
         """ Build the C++ document holding the implementation's header and source
@@ -371,104 +448,13 @@ class ComponentImplementationGenerator(object):
             extends=f"public {component.base_class}",
             comment=f"Python implementation of the {component.fpp_name} component",
         ) as cls:
-            with cls.public("Construction, initialization, and destruction"):
-                constructor = cls.constructor(
-                    params=[("const char*", "name", "The component name")],
-                    comment=f"Construct {self.name} object",
-                )
-                constructor.init(f"{component.base_class}(name)")
-                # The mirror object is owned by exactly one C++ object, so copying is not meaningful
-                cls.constructor(
-                    params=[(f"const {self.name}&", "other")],
-                    deleted=True,
-                    comment=f"Copy construction of {self.name} is not supported",
-                )
-                cls.destructor(defaulted=True, comment=f"Destroy {self.name} object")
-                init = cls.function(
-                    "init",
-                    params=self._init_params(),
-                    comment=f"Initialize {self.name} object and its mirrored Python object",
-                )
-                self._write_init(init.body)
-                deinit = cls.function(
-                    "deinit",
-                    override=True,
-                    comment="Release the mirrored Python object",
-                )
-                self._write_deinit(deinit.body)
-
-            with cls.public("Handlers forwarded to Python"):
-                for port in component.input_ports:
-                    handler = cls.function(
-                        port.handler_name,
-                        ret=port.return_type,
-                        params=[("FwIndexType", "portNum", "The port number")]
-                        + [(param.cpp_type, param.name) for param in port.parameters],
-                        override=True,
-                        comment=f"Handler for input port {port.name}",
-                    )
-                    self._write_forwarding_call(
-                        handler.body,
-                        port.handler_name,
-                        ["portNum"] + [param.name for param in port.parameters],
-                        port.return_type,
-                    )
-                for internal_port in component.internal_ports:
-                    handler = cls.function(
-                        internal_port.handler_name,
-                        params=[
-                            (param.cpp_type, param.name) for param in internal_port.parameters
-                        ],
-                        override=True,
-                        comment=f"Handler for internal port {internal_port.name}",
-                    )
-                    self._write_forwarding_call(
-                        handler.body,
-                        internal_port.handler_name,
-                        [param.name for param in internal_port.parameters],
-                        "void",
-                    )
-                for command in component.commands:
-                    handler = cls.function(
-                        command.handler_name,
-                        params=[
-                            ("FwOpcodeType", "opCode", "The opcode"),
-                            ("U32", "cmdSeq", "The command sequence number"),
-                        ]
-                        + [(param.cpp_type, param.name) for param in command.parameters],
-                        override=True,
-                        comment=f"Handler for command {command.name}",
-                    )
-                    self._write_forwarding_call(
-                        handler.body,
-                        command.handler_name,
-                        ["opCode", "cmdSeq"] + [param.name for param in command.parameters],
-                        "void",
-                    )
-
+            self._write_lifecycle(cls)
+            self._write_handlers(cls)
             if component.parameters:
                 with cls.public("Parameter helpers"):
                     for param in component.parameters:
                         self._write_parameter_helper(cls, param)
-
-            using_statements = base_class_methods(component) + [
-                channel.write_name for channel in component.channels
-            ]
-            if using_statements:
-                with cls.public("Base class members exposed to Python"):
-                    cls.lines(
-                        "\n".join(
-                            f"|using {component.base_class}::{method};"
-                            for method in using_statements
-                        )
-                    )
-
-            with cls.public("Member variables"):
-                cls.var(
-                    "pybind11::object",
-                    SELF_MEMBER,
-                    comment="The mirrored Python object this component forwards into",
-                )
+            self._write_exposed_members(cls)
         return doc
 
     def _write_parameter_helper(self, cls: ClassBuilder, param: ParameterView) -> None:
@@ -508,44 +494,34 @@ class ComponentImplementationGenerator(object):
         Returns:
             The contents of the generated Python implementation template file
         """
-        handlers = [
-            PYTHON_PORT_HANDLER_TEMPLATE.format(
-                handler=port.handler_name,
-                name=port.name,
-                args="".join(
-                    f", {name}"
-                    for name in ["portNum"] + [param.name for param in port.parameters]
-                ),
-                # A port that returns a value cannot be left returning None: the C++ side casts what
-                # comes back to the port's return type and raises if it cannot
-                return_note=(
-                    f", returning a {port.return_type}" if port.returns_value else ""
-                ),
+        stubs = []
+        for handler in self.component.handlers:
+            args = "".join(f", {name}" for name in handler.handler_arguments)
+            # A command handler is not left to fall off the end: the ground waits for a response, so the
+            # stub sends one
+            if isinstance(handler, CommandView):
+                stubs.append(
+                    PYTHON_COMMAND_HANDLER_TEMPLATE.format(
+                        handler=handler.handler_name, name=handler.name, args=args
+                    )
+                )
+                continue
+            return_type = handler.handler_return_type
+            stubs.append(
+                PYTHON_PORT_HANDLER_TEMPLATE.format(
+                    handler=handler.handler_name,
+                    name=handler.name,
+                    kind=handler.HANDLER_KIND,
+                    args=args,
+                    # A port that returns a value cannot be left returning None: the C++ side casts what
+                    # comes back to the port's return type and raises if it cannot
+                    return_note=(
+                        "" if return_type == "void" else f", returning a {return_type}"
+                    ),
+                )
             )
-            for port in self.component.input_ports
-        ]
-        handlers += [
-            PYTHON_PORT_HANDLER_TEMPLATE.format(
-                handler=internal_port.handler_name,
-                name=internal_port.name,
-                args="".join(f", {param.name}" for param in internal_port.parameters),
-                return_note="",
-            )
-            for internal_port in self.component.internal_ports
-        ]
-        handlers += [
-            PYTHON_COMMAND_HANDLER_TEMPLATE.format(
-                handler=command.handler_name,
-                name=command.name,
-                args="".join(
-                    f", {name}"
-                    for name in ["opCode", "cmdSeq"] + [param.name for param in command.parameters]
-                ),
-            )
-            for command in self.component.commands
-        ]
         return PYTHON_IMPLEMENTATION_TEMPLATE.format(
-            name=self.name, handlers="\n".join(handlers)
+            name=self.name, handlers="\n".join(stubs)
         )
 
     def files(self) -> Dict[str, str]:

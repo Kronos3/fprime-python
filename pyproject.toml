@@ -30,8 +30,8 @@ classifiers = [
 ]
 dependencies = [
     "pybind11>=3.0.1",
-    "fprime-fpp-python>=3.3.16",
-    "fprime-cpp-codegen>=0.1.0",
+    "fprime-fpp-python==3.3.17",
+    "fprime-cpp-codegen==0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +50,7 @@ fprime-python-ac = "fprime_python.autocode.__main__:main"
 fprime-python-runner = "fprime_python.runner:main"
 
 [tool.mypy]
-files = ["src/fprime_python", "tests/compare.py"]
+files = ["src/fprime_python"]
 python_version = "3.10"
 strict = true
 

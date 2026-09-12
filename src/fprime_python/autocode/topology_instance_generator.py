@@ -15,7 +15,7 @@ import fpp
 from fprime_cpp_codegen import Body, CppDocBuilder, Output
 
 from .binding_generator import BindingGenerator, expression_chain, verbatim
-from .constants import FPRIME_PYTHON_ANNOTATION
+from .constants import FPRIME_PYTHON_ANNOTATION, SELF_MEMBER
 from .include import IncludeManager
 from .names import cpp_name
 from .view import TopologyView
@@ -45,8 +45,8 @@ TOPOLOGY_FUNCTION_TEMPLATE = """m.def("{action}", &{namespace}::{action},
 #: process but only mirrors a Python object once the topology has initialized it.
 INSTANCE_TEMPLATE = """.def_property_readonly_static("{name}",
     [](pybind11::object /* cls */) {{
-        if ({qualified_name}.m_self) {{
-            return {qualified_name}.m_self;
+        if ({qualified_name}.{self_member}) {{
+            return {qualified_name}.{self_member};
         }}
         throw std::runtime_error("Instance {qualified_name} is not initialized");
     }},
@@ -139,6 +139,7 @@ class TopologyBindingGenerator(BindingGenerator):
                     INSTANCE_TEMPLATE.format(
                         name=instance.unqualified_name,
                         qualified_name=cpp_name(instance.qualified_name),
+                        self_member=SELF_MEMBER,
                     )
                     for instance in instances
                 ],

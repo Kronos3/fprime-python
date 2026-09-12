@@ -10,7 +10,8 @@ them, and the checks that reject a model this autocoder cannot bind.
 """
 from __future__ import annotations
 
-from typing import List
+from abc import ABC, abstractmethod
+from typing import List, Sequence, Tuple
 
 import fpp
 
@@ -69,8 +70,62 @@ class UnsupportedModelError(Exception):
     """ The model uses a feature this autocoder cannot bind to Python """
 
 
-class PortView:
+class HandlerView(ABC):
+    """ One component member that F Prime declares a pure virtual handler for
+
+    A handler's signature is a fixed prefix -- the port number for a general port, the opcode and the
+    command sequence number for a command, nothing for an internal port -- followed by the member's own
+    formal parameters. The generated C++ override, the call it forwards into Python, and the stub in the
+    Python template all have to agree on that signature, so it is spelled once here and each generator
+    reads it back rather than repeating the prefix.
+    """
+
+    #: The handler's fixed leading parameters, as (C++ type, name, doc comment) triples
+    HANDLER_PREFIX: Tuple[Tuple[str, str, str], ...] = ()
+
+    #: What the handler handles, as it reads in a generated comment
+    HANDLER_KIND: str = ""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """ The member's name as written in the model """
+
+    @property
+    @abstractmethod
+    def handler_name(self) -> str:
+        """ The name of the handler F Prime declares for this member """
+
+    @property
+    @abstractmethod
+    def parameters(self) -> List[FormalParameterView]:
+        """ The member's own formal parameters, in declaration order """
+
+    @property
+    def handler_return_type(self) -> str:
+        """ The C++ return type of the handler; only a port can return a value """
+        return "void"
+
+    @property
+    def handler_parameters(self) -> List[Sequence[str]]:
+        """ Every parameter of the handler, prefix first, for a C++ declaration """
+        return list(self.HANDLER_PREFIX) + [
+            (param.cpp_type, param.name) for param in self.parameters
+        ]
+
+    @property
+    def handler_arguments(self) -> List[str]:
+        """ The names of every handler argument, prefix first, in call order """
+        return [name for _, name, _ in self.HANDLER_PREFIX] + [
+            param.name for param in self.parameters
+        ]
+
+
+class PortView(HandlerView):
     """ One general port instance of a component """
+
+    HANDLER_PREFIX = (("FwIndexType", "portNum", "The port number"),)
+    HANDLER_KIND = "input port"
 
     def __init__(self, port: fpp.GeneralPortInstance) -> None:
         """ Wrap a general port instance
@@ -128,25 +183,22 @@ class PortView:
         ]
 
     @property
-    def return_type(self) -> str:
+    def handler_return_type(self) -> str:
         """ The C++ return type of the port's handler, "void" when the port returns nothing """
         return_type_name = self.definition.return_type
         resolved = None if return_type_name is None else return_type_name.resolved_type
         return value_type(resolved, StringClass.PORT_RETURN)
 
-    @property
-    def returns_value(self) -> bool:
-        """ Whether the port returns a value """
-        return self.definition.return_type is not None
 
-
-class InternalPortView:
+class InternalPortView(HandlerView):
     """ One internal port instance of a component
 
     An internal port is how a component sends work to its own thread: the invoke function queues a message and
     the handler runs it off the queue. Both sides are useful from Python, and the handler is pure virtual, so
     both are generated -- but unlike a general port there is no port number, because there is no connection.
     """
+
+    HANDLER_KIND = "internal port"
 
     def __init__(self, port: fpp.InternalPortInstance) -> None:
         """ Wrap an internal port instance """
@@ -176,8 +228,14 @@ class InternalPortView:
         ]
 
 
-class CommandView:
+class CommandView(HandlerView):
     """ One command of a component """
+
+    HANDLER_PREFIX = (
+        ("FwOpcodeType", "opCode", "The opcode"),
+        ("U32", "cmdSeq", "The command sequence number"),
+    )
+    HANDLER_KIND = "command"
 
     def __init__(self, command: fpp.NonParamCommand) -> None:
         """ Wrap a command """
@@ -220,7 +278,9 @@ class EventView:
         try:
             return EVENT_SEVERITY_TOKENS[severity]
         except KeyError:
-            raise ValueError(f"Unsupported event severity {severity} on event {self.name}") from None
+            raise UnsupportedModelError(
+                f"Unsupported event severity {severity} on event {self.name}"
+            ) from None
 
     @property
     def dispatch_name(self) -> str:
@@ -335,20 +395,50 @@ class ComponentView:
         """ Whether the component has commands, and so can respond to them """
         return bool(self.commands)
 
+    @property
+    def has_queue_full_hooks(self) -> bool:
+        """ Whether anything on the component declares `hook` queue-full behavior
+
+        `hook` makes F Prime declare a pure virtual overflow hook -- `<port>_overflowHook`,
+        `<internal>_overflowHook` or `<cmd>_cmdOverflowHook` -- alongside the handler. Async input ports,
+        internal ports and async commands can each ask for one.
+        """
+        for port in self.component.port_map.values():
+            if isinstance(port, fpp.GeneralPortInstance):
+                kind = port.kind
+                if (
+                    isinstance(kind, fpp.AsyncInputGeneralKind)
+                    and kind.queue_full == fpp.QueueFull.Hook
+                ):
+                    return True
+            elif (
+                isinstance(port, fpp.InternalPortInstance)
+                and port.queue_full == fpp.QueueFull.Hook
+            ):
+                return True
+        return any(
+            isinstance(command.command.kind, fpp.AsyncNonParamKind)
+            and command.command.kind.queue_full == fpp.QueueFull.Hook
+            for command in self.commands
+        )
+
     def check_supported(self) -> None:
         """ Reject a component whose features this autocoder cannot bind
 
-        F Prime declares a pure virtual handler for every state machine action and guard and for every data
-        product container. Neither has a Python counterpart yet -- an action takes a state machine id and a
-        signal, and a container handler takes a `Fw::DpContainer` -- so generating the component anyway would
-        leave an abstract class and fail at link time, a long way from the cause.
+        F Prime declares a pure virtual handler for every state machine action and guard, for every data
+        product container, and for every `hook` queue-full overflow. None has a Python counterpart yet --
+        an action takes a state machine id and a signal, a container handler takes a `Fw::DpContainer`, and
+        an overflow hook takes the message that could not be queued -- so generating the component anyway
+        would leave an abstract class and fail at link time, a long way from the cause.
 
         Raises:
-            UnsupportedModelError: The component has state machine instances or data products
+            UnsupportedModelError: The component has state machine instances, data products or a `hook`
+                queue-full declaration
         """
         unsupported = [
             ("state machine instances", self.component.has_state_machine_instances),
             ("data products", self.component.has_data_products),
+            ("`hook` queue-full behavior", self.has_queue_full_hooks),
         ]
         for feature, present in unsupported:
             if present:
@@ -357,8 +447,8 @@ class ComponentView:
                     f" declares a handler for each of them that has no Python equivalent yet. Remove the"
                     f" @{FPRIME_PYTHON_ANNOTATION} annotation to implement this component in C++ instead."
                 )
-        # Reached for the side effect: constructing the port views rejects a serial port
-        self.input_ports
+        # Constructing the port views rejects a serial port
+        self._general_ports(inputs=True)
 
     def _general_ports(self, *, inputs: bool) -> List[PortView]:
         """ The component's general (that is, modeled rather than special) ports of one direction
@@ -418,6 +508,18 @@ class ComponentView:
             for command in self.component.command_map.values()
             if isinstance(command, fpp.NonParamCommand)
         ]
+
+    @property
+    def handlers(self) -> List[HandlerView]:
+        """ Every component member F Prime declares a handler for, in generation order
+
+        The three families are generated identically -- an override that forwards into Python, and a stub
+        in the Python template -- so the generators walk this one list rather than each family in turn.
+        """
+        handlers: List[HandlerView] = list(self.input_ports)
+        handlers += self.internal_ports
+        handlers += self.commands
+        return handlers
 
     @property
     def events(self) -> List[EventView]:

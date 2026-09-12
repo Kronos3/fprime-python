@@ -5,7 +5,7 @@ other way around, so only the pybind11 C++ bindings need generating for them.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
 
 import fpp
 from fprime_cpp_codegen import Body
@@ -185,7 +185,7 @@ class EnumBindingGenerator(BindingGenerator):
         return ["pybind11/native_enum.h"]
 
 
-#: Cast selecting the non-const overload of a generated struct member getter
+#: Cast picking one struct member getter overload: const when it returns by value, non-const otherwise
 GETTER_STATIC_CAST_TEMPLATE = "static_cast<{field_type} ({fqn}::*)(){const_qualifier}>"
 
 #: Property and explicit accessors bound for one struct member
@@ -233,26 +233,25 @@ class StructBindingGenerator(BindingGenerator):
         self.struct_type = struct_type
 
     @property
-    def bound_members(self) -> List[str]:
-        """ The names of the struct's bindable members, in declaration order
+    def bound_members(self) -> List[Tuple[str, fpp.Type]]:
+        """ The struct's bindable members and their types, in declaration order
 
-        The semantic type's member map is keyed by member name and so iterates in name order rather than
-        declaration order, so the order comes from the definition node. Members that are inline arrays
-        are dropped: the struct's `sizes` map holds an entry for each of them.
+        The semantic type lists its members in declaration order, which is the order F Prime declares the
+        accessors in. Members that are inline arrays are dropped: the struct's `sizes` map holds an entry
+        for each of them.
         """
         return [
-            member.name
-            for member in self.struct_type.node.members
-            if member.name not in self.struct_type.sizes
+            (name, member_type)
+            for name, member_type in self.struct_type.anon_struct.members
+            if name not in self.struct_type.sizes
         ]
 
     def bind(self, body: Body) -> None:
         """ Write the pybind11 statements binding this struct """
         fqn = self.cpp_fqn
-        members = self.struct_type.anon_struct.members
         links = [".def(pybind11::init<>())"]
-        for name in self.bound_members:
-            field_type, is_const = struct_member_getter(members[name])
+        for name, member_type in self.bound_members:
+            field_type, is_const = struct_member_getter(member_type)
             getter_cast = GETTER_STATIC_CAST_TEMPLATE.format(
                 field_type=field_type,
                 fqn=fqn,

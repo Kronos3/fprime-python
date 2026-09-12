@@ -16,3 +16,7 @@ MODULE_NAME: str = "fprime_py"
 #: Prefix of the C++ variables holding the module and its submodules. A submodule's variable is this
 #: prefix followed by the flattened FPP scope it stands for, so the module itself is the bare prefix.
 MODULE_VARIABLE_PREFIX: str = "fprime_"
+
+#: Member of a generated component class that holds the mirrored Python object. The component generator
+#: declares it and the topology generator reads it off each bound instance, so both spell it from here.
+SELF_MEMBER: str = "m_self"

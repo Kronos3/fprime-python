@@ -21,7 +21,7 @@ from .cpp_types import UnsupportedTypeError
 from .include import IncludeError, IncludeManager
 from .model import IMPORT_LIST_PATH, SOURCE_LIST_PATH, ModelError, load_model, read_path_list
 from .view import UnsupportedModelError
-from .pybind11_generator import INIT_FILE_BASE, get_module_lines
+from .pybind11_generator import INIT_FILE_BASE, render_module_file
 from .visitor import AnnotatedDefinitionVisitor
 
 
@@ -227,7 +227,7 @@ def main(argv: List[str] | None = None) -> int:
 	elif args.command == "initialization":
 		init_file = args.output_directory / f"{INIT_FILE_BASE}.cpp"
 		# A dry run only reports the file name, so the model is not needed to produce it
-		contents = "" if args.dry_run else get_module_lines(args.json_files, args.header_files)
+		contents = "" if args.dry_run else render_module_file(args.json_files, args.header_files)
 		output = {init_file: contents}
 	else:
 		assert False, f"Unreachable command branch: {args.command}"

@@ -38,22 +38,6 @@ and support libraries meaning the user need only mark components as implemented 
 Bindings are generated from the component's model and are built on the [`pybind11`](https://github.com/pybind/pybind11)
 library, which handles the nuances of the Python API.
 
-### How the autocoder reads the model
-
-The autocoder reads the FPP model directly with [`fprime-fpp-python`](https://pypi.org/project/fprime-fpp-python/),
-the native FPP Python bindings, and emits its C++ through
-[`fprime-cpp-codegen`](https://pypi.org/project/fprime-cpp-codegen/), the same builder API F Prime's own C++
-generators are written against. Nothing has to be generated before it runs: the FPP files it analyzes are the
-module's own translation units plus the transitive closure `fpp-depend` already leaves in the module's build cache.
-
-> [!NOTE]
-> Earlier releases went through `fpp-to-json` and `fprime-python-model`, and so needed
-> `FPRIME_ENABLE_JSON_MODEL_GENERATION=ON` in `settings.ini`. That is no longer required, and the JSON model is no
-> longer read.
-
-Things found in those two packages while porting onto them — with what this autocoder does instead — are collected
-in [`docs/upstream-notes.md`](./docs/upstream-notes.md).
-
 ## Installation and Setup
 
 In order to use `fprime-python` download the source code, or add it as a Git submodule.  Once finished, install the
@@ -84,7 +68,7 @@ Once finished, the python bindings will be autocoded and included in the next bu
 as shown below). This will also produce a `<component>.template.py` file in the component folder as a basic template for
 implementing components in python.
 
-Every port, command, event, telemetry channel, parameter and internal port of the component is bound. Three
+Every port, command, event, telemetry channel, parameter and internal port of the component is bound. Four
 component features cannot be bound yet, because F Prime declares a handler for each that has no Python equivalent:
 
 | Feature | Why | What happens |
@@ -92,6 +76,7 @@ component features cannot be bound yet, because F Prime declares a handler for e
 | serial port | its handler takes a serialization buffer | rejected with an error naming the port |
 | state machine instance | its actions and guards take a state machine id and a signal | rejected with an error naming the component |
 | data product container | its handler takes a `Fw::DpContainer` | rejected with an error naming the component |
+| `hook` queue-full behavior | its overflow hook takes the message that could not be queued | rejected with an error naming the component |
 
 In each case the autocoder refuses rather than generating a class that would leave the handler unimplemented and
 fail to link. Drop the `@ fprime-python` annotation to implement such a component in C++ instead.

@@ -76,7 +76,7 @@ def all_modules(scopes: Iterable[str]) -> Iterator[str]:
             yield ".".join(parts)
 
 
-def get_module_lines(files: List[Path], headers: List[Path]) -> str:
+def render_module_file(files: List[Path], headers: List[Path]) -> str:
     """ Generate the module initialization file
 
     Args:

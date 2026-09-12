@@ -38,9 +38,6 @@ One language to rule them all, one language to find them...
 #: Comment placed above every generated initialization function's definition
 INIT_FUNCTION_DEFINITION_COMMENT = "\n// ...and in the darkness bind them ({fqn})"
 
-#: Statement that invokes one generated initialization function against its containing submodule
-INIT_FUNCTION_INVOCATION_TEMPLATE = "(void) init_{flat_fqn}({submodule_variable});"
-
 
 def verbatim(body: Body, text: str) -> None:
     """ Write text into a function body exactly as given
@@ -214,12 +211,8 @@ class BindingGenerator(ABC):
             initialization function against that scope's pybind11 submodule
         """
         scope = scope_of(self.fpp_name)
-        return {
-            scope: INIT_FUNCTION_INVOCATION_TEMPLATE.format(
-                flat_fqn=flat_name(self.fpp_name),
-                submodule_variable=f"{MODULE_VARIABLE_PREFIX}{flat_name(scope)}",
-            )
-        }
+        submodule_variable = f"{MODULE_VARIABLE_PREFIX}{flat_name(scope)}"
+        return {scope: f"(void) {self.init_function_name}({submodule_variable});"}
 
     def files(self) -> Dict[str, str]:
         """ Generate the binding's files

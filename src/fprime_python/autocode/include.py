@@ -63,8 +63,8 @@ class IncludeManager(object):
         Returns:
             The include path, e.g. "Ref/PyActiveComponentAc.hpp"
         Raises:
-            IncludeError: The definition is of a kind with no generated header, has no source location,
-                or was defined outside every build location
+            IncludeError: The definition is of a kind with no generated header, or was defined
+                outside every build location
         """
         try:
             type_name = self.symbol_type_to_include_type_name[type(symbol)]
@@ -73,10 +73,7 @@ class IncludeManager(object):
                 f"Unsupported symbol type for include path determination: {type(symbol).__name__}"
             ) from None
 
-        location = symbol.definition.location
-        if location is None:
-            raise IncludeError(f"No source location recorded for {symbol.qualified_name}")
-        directory = Path(location.uri).resolve().parent
+        directory = Path(symbol.definition.location.uri).resolve().parent
 
         possible_include_paths = [
             directory.relative_to(prefix)

@@ -104,13 +104,8 @@ def load_model(sources: Iterable[Path], imports: Iterable[Path]) -> fpp.Model:
         [str(path) for path in source_paths], imports=[str(path) for path in import_paths]
     )
     if model.has_errors:
-        errors = [
-            diagnostic for diagnostic in model.diagnostics if diagnostic.level == "error"
-        ]
-        # Report every diagnostic rather than nothing should the level strings ever change
-        reported = errors or model.diagnostics
         raise ModelError(
             f"FPP model has {model.error_count} error(s):\n"
-            + "\n".join(f"  {diagnostic.display}" for diagnostic in reported)
+            + "\n".join(f"  {diagnostic.display}" for diagnostic in model.diagnostics)
         )
     return model
